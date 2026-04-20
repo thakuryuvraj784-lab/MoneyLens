@@ -1,21 +1,22 @@
+const path = require('path')
+require('dotenv').config({ path: path.join(__dirname, '../.env.local') })
 const express = require('express')
 const router = express.Router()
 const bcrypt = require('bcryptjs')
 const jwt = require('jsonwebtoken')
 const { createClient } = require('@supabase/supabase-js')
-require('dotenv').config()
 
 const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_KEY
 )
+
 
 // REGISTER
 router.post('/register', async (req, res) => {
   const { name, email, password } = req.body
 
   try {
-    // Check if user already exists
     const { data: existing } = await supabase
       .from('users')
       .select('email')
@@ -26,10 +27,8 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ message: 'Email already registered!' })
     }
 
-    // Hash the password
     const password_hash = await bcrypt.hash(password, 10)
 
-    // Save to Supabase
     const { data, error } = await supabase
       .from('users')
       .insert([{ name, email, password_hash }])
@@ -37,7 +36,6 @@ router.post('/register', async (req, res) => {
 
     if (error) throw error
 
-    // Create JWT token
     const token = jwt.sign(
       { userId: data[0].id, email },
       process.env.JWT_SECRET,
@@ -56,7 +54,6 @@ router.post('/login', async (req, res) => {
   const { email, password } = req.body
 
   try {
-    // Find user
     const { data: user } = await supabase
       .from('users')
       .select('*')
@@ -67,13 +64,11 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ message: 'Email not found!' })
     }
 
-    // Check password
     const match = await bcrypt.compare(password, user.password_hash)
     if (!match) {
       return res.status(400).json({ message: 'Wrong password!' })
     }
 
-    // Create JWT token
     const token = jwt.sign(
       { userId: user.id, email },
       process.env.JWT_SECRET,
