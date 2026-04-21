@@ -286,6 +286,36 @@ export default function Dashboard() {
     router.push('/')
   }
 
+  const exportToCSV = () => {
+    if (transactions.length === 0) {
+      toast.error('No transactions to export')
+      return
+    }
+
+    const headers = ['Date', 'Type', 'Category', 'Note', 'Amount']
+    const csvContent = [
+      headers.join(','),
+      ...transactions.map(t => [
+        new Date(t.date).toLocaleDateString(),
+        t.type,
+        t.category,
+        `"${t.note || ''}"`,
+        t.type === 'income' ? t.amount : -t.amount
+      ].join(','))
+    ].join('\n')
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const link = document.createElement('a')
+    const url = URL.createObjectURL(blob)
+    link.setAttribute('href', url)
+    link.setAttribute('download', `transactions_${new Date().toISOString().split('T')[0]}.csv`)
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+
+    toast.success('Transactions exported!')
+  }
+
   // Calculate finance stats
   const totalIncome = transactions
     .filter(t => t.type === 'income')
@@ -381,22 +411,41 @@ export default function Dashboard() {
             </p>
           </div>
 
-          <button
-            onClick={handleLogout}
-            style={{
-              backgroundColor: 'transparent',
-              color: '#FF6B6B',
-              border: '1px solid #FF6B6B',
-              padding: '10px 24px',
-              borderRadius: '8px',
-              fontSize: '14px',
-              fontWeight: '600',
-              cursor: 'pointer',
-              letterSpacing: '1px'
-            }}
-          >
-            Logout
-          </button>
+          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+            <button
+              onClick={exportToCSV}
+              style={{
+                backgroundColor: 'transparent',
+                color: '#00C2FF',
+                border: '1px solid #00C2FF',
+                padding: '10px 24px',
+                borderRadius: '8px',
+                fontSize: '14px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                letterSpacing: '1px'
+              }}
+            >
+              Export CSV
+            </button>
+
+            <button
+              onClick={handleLogout}
+              style={{
+                backgroundColor: 'transparent',
+                color: '#FF6B6B',
+                border: '1px solid #FF6B6B',
+                padding: '10px 24px',
+                borderRadius: '8px',
+                fontSize: '14px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                letterSpacing: '1px'
+              }}
+            >
+              Logout
+            </button>
+          </div>
         </div>
 
         {/* Finance Summary Cards */}
