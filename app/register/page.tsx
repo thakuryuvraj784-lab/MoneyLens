@@ -1,8 +1,10 @@
 'use client'
 import Navbar from '../../components/Navbar'
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 
 export default function Register() {
+  const router = useRouter()
   const [isLogin, setIsLogin] = useState(false)
   const [form, setForm] = useState({ name: '', email: '', password: '' })
   const [message, setMessage] = useState('')
@@ -39,6 +41,7 @@ export default function Register() {
         localStorage.setItem('token', data.token)
         localStorage.setItem('user', JSON.stringify(data.user))
         setMessage(isLogin ? 'Login successful! 🎉' : 'Account created! 🎉')
+        router.push('/dashboard')
       } else {
         setMessage(data.message || 'Something went wrong!')
       }
