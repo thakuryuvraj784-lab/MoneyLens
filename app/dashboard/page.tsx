@@ -39,6 +39,13 @@ interface Transaction {
   created_at: string
 }
 
+interface Budget {
+  id: string
+  user_id: string
+  category: string
+  monthly_limit: number
+}
+
 const CATEGORIES = [
   'Food',
   'Transport',
@@ -57,7 +64,9 @@ export default function Dashboard() {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
   const [transactions, setTransactions] = useState<Transaction[]>([])
+  const [budgets, setBudgets] = useState<Budget[]>([])
   const [showModal, setShowModal] = useState(false)
+  const [showBudgetModal, setShowBudgetModal] = useState(false)
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null)
   const [dateRange, setDateRange] = useState<'daily' | 'weekly' | 'monthly' | 'yearly'>('monthly')
   const [formData, setFormData] = useState({
@@ -66,6 +75,10 @@ export default function Dashboard() {
     category: 'Food',
     note: '',
     date: new Date().toISOString().split('T')[0]
+  })
+  const [budgetForm, setBudgetForm] = useState({
+    category: 'Food',
+    monthly_limit: ''
   })
 
   useEffect(() => {
@@ -80,6 +93,7 @@ export default function Dashboard() {
     const parsedUser = JSON.parse(userData)
     setUser(parsedUser)
     fetchTransactions(parsedUser.id)
+    fetchBudgets(parsedUser.id)
     setLoading(false)
   }, [router])
 
@@ -96,6 +110,83 @@ export default function Dashboard() {
     }
 
     setTransactions(data || [])
+  }
+
+  const fetchBudgets = async (userId: string) => {
+    const { data, error } = await supabase
+      .from('budgets')
+      .select('*')
+      .eq('user_id', userId)
+
+    if (error) {
+      console.error('Failed to load budgets:', error)
+      return
+    }
+
+    setBudgets(data || [])
+  }
+
+  const handleBudgetSubmit = async () => {
+    if (!budgetForm.monthly_limit || parseFloat(budgetForm.monthly_limit) <= 0) {
+      toast.error('Please enter a valid budget amount')
+      return
+    }
+
+    const existingBudget = budgets.find(b => b.category === budgetForm.category)
+    const budgetData = {
+      user_id: user?.id,
+      category: budgetForm.category,
+      monthly_limit: parseFloat(budgetForm.monthly_limit)
+    }
+
+    if (existingBudget) {
+      const { error } = await supabase
+        .from('budgets')
+        .update({ monthly_limit: budgetData.monthly_limit })
+        .eq('id', existingBudget.id)
+
+      if (error) {
+        toast.error('Failed to update budget')
+        return
+      }
+      toast.success('Budget updated!')
+    } else {
+      const { error } = await supabase
+        .from('budgets')
+        .insert([budgetData])
+
+      if (error) {
+        toast.error('Failed to set budget')
+        return
+      }
+      toast.success('Budget set!')
+    }
+
+    setShowBudgetModal(false)
+    setBudgetForm({ category: 'Food', monthly_limit: '' })
+    fetchBudgets(user?.id || '')
+  }
+
+  const getCategorySpending = (category: string) => {
+    const now = new Date()
+    const currentMonth = now.getMonth()
+    const currentYear = now.getFullYear()
+
+    return transactions
+      .filter(t =>
+        t.type === 'expense' &&
+        t.category === category &&
+        new Date(t.date).getMonth() === currentMonth &&
+        new Date(t.date).getFullYear() === currentYear
+      )
+      .reduce((sum, t) => sum + t.amount, 0)
+  }
+
+  const getBudgetProgressColor = (spent: number, limit: number) => {
+    const percentage = (spent / limit) * 100
+    if (percentage >= 90) return '#F44336'
+    if (percentage >= 70) return '#FF9800'
+    return '#4CAF50'
   }
 
   const handleSubmit = async () => {
@@ -615,6 +706,137 @@ export default function Dashboard() {
           </div>
         </div>
 
+        {/* Budget Goals */}
+        <div style={{
+          backgroundColor: '#111827',
+          border: '1px solid rgba(0, 194, 255, 0.15)',
+          borderRadius: '12px',
+          padding: '28px',
+          marginBottom: '40px'
+        }}>
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: '24px',
+            flexWrap: 'wrap',
+            gap: '16px'
+          }}>
+            <h2 style={{
+              color: 'white',
+              fontSize: '20px',
+              fontWeight: '700',
+              margin: 0
+            }}>
+              Budget Goals
+            </h2>
+
+            <button
+              onClick={() => setShowBudgetModal(true)}
+              style={{
+                backgroundColor: 'transparent',
+                color: '#00C2FF',
+                border: '1px solid #00C2FF',
+                padding: '10px 20px',
+                borderRadius: '8px',
+                fontSize: '13px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                letterSpacing: '1px'
+              }}
+            >
+              + Set Budget
+            </button>
+          </div>
+
+          {budgets.length === 0 ? (
+            <p style={{ color: '#8892A4', fontSize: '14px' }}>
+              No budgets set yet. Click "Set Budget" to create spending limits for categories!
+            </p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {budgets.map((budget) => {
+                const spent = getCategorySpending(budget.category)
+                const percentage = Math.min((spent / budget.monthly_limit) * 100, 100)
+                const progressColor = getBudgetProgressColor(spent, budget.monthly_limit)
+                const isOverBudget = spent >= budget.monthly_limit
+
+                if (percentage >= 90 && percentage < 100 && !isOverBudget) {
+                  toast.warning(`You're at ${Math.round(percentage)}% of your ${budget.category} budget!`, { id: `budget-${budget.id}` })
+                } else if (isOverBudget) {
+                  toast.error(`You've exceeded your ${budget.category} budget!`, { id: `budget-${budget.id}` })
+                }
+
+                return (
+                  <div key={budget.id} style={{
+                    backgroundColor: '#0A0E1A',
+                    border: '1px solid rgba(0, 194, 255, 0.1)',
+                    borderRadius: '8px',
+                    padding: '16px 20px'
+                  }}>
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      marginBottom: '12px'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <span style={{
+                          color: 'white',
+                          fontSize: '16px',
+                          fontWeight: '600'
+                        }}>
+                          {budget.category}
+                        </span>
+                        {isOverBudget && (
+                          <span style={{
+                            backgroundColor: '#F4433620',
+                            color: '#F44336',
+                            fontSize: '11px',
+                            padding: '2px 8px',
+                            borderRadius: '4px',
+                            fontWeight: '600'
+                          }}>
+                            Over Budget!
+                          </span>
+                        )}
+                      </div>
+                      <span style={{ color: '#8892A4', fontSize: '14px' }}>
+                        ₹{spent.toLocaleString()} / ₹{budget.monthly_limit.toLocaleString()}
+                      </span>
+                    </div>
+
+                    <div style={{
+                      width: '100%',
+                      height: '8px',
+                      backgroundColor: '#1a2332',
+                      borderRadius: '4px',
+                      overflow: 'hidden'
+                    }}>
+                      <div style={{
+                        width: `${percentage}%`,
+                        height: '100%',
+                        backgroundColor: progressColor,
+                        borderRadius: '4px',
+                        transition: 'width 0.3s ease'
+                      }} />
+                    </div>
+
+                    <p style={{
+                      color: progressColor,
+                      fontSize: '12px',
+                      margin: '8px 0 0',
+                      fontWeight: '600'
+                    }}>
+                      {Math.round(percentage)}% used
+                    </p>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+
         {/* Registered Events (existing) */}
         <div style={{
           backgroundColor: '#111827',
@@ -828,6 +1050,128 @@ export default function Dashboard() {
                 }}
               >
                 {editingTransaction ? 'Update' : 'Add'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Budget Modal */}
+      {showBudgetModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.8)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 2000
+        }}>
+          <div style={{
+            backgroundColor: '#111827',
+            border: '1px solid rgba(0, 194, 255, 0.3)',
+            borderRadius: '16px',
+            padding: '32px',
+            width: '100%',
+            maxWidth: '400px',
+            margin: '20px'
+          }}>
+            <h2 style={{
+              color: 'white',
+              fontSize: '24px',
+              fontWeight: '700',
+              margin: '0 0 24px'
+            }}>
+              Set Budget Limit
+            </h2>
+
+            {/* Category */}
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ color: '#8892A4', fontSize: '12px', textTransform: 'uppercase', letterSpacing: '1px', display: 'block', marginBottom: '8px' }}>
+                Category
+              </label>
+              <select
+                value={budgetForm.category}
+                onChange={(e) => setBudgetForm({ ...budgetForm, category: e.target.value })}
+                style={{
+                  width: '100%',
+                  padding: '12px 16px',
+                  backgroundColor: '#0A0E1A',
+                  border: '1px solid rgba(0, 194, 255, 0.2)',
+                  borderRadius: '8px',
+                  color: 'white',
+                  fontSize: '14px',
+                  outline: 'none',
+                  boxSizing: 'border-box',
+                  cursor: 'pointer'
+                }}
+              >
+                {CATEGORIES.map(cat => (
+                  <option key={cat} value={cat} style={{ backgroundColor: '#161b22' }}>{cat}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Monthly Limit */}
+            <div style={{ marginBottom: '24px' }}>
+              <label style={{ color: '#8892A4', fontSize: '12px', textTransform: 'uppercase', letterSpacing: '1px', display: 'block', marginBottom: '8px' }}>
+                Monthly Limit (₹)
+              </label>
+              <input
+                type="number"
+                placeholder="5000"
+                value={budgetForm.monthly_limit}
+                onChange={(e) => setBudgetForm({ ...budgetForm, monthly_limit: e.target.value })}
+                style={{
+                  width: '100%',
+                  padding: '12px 16px',
+                  backgroundColor: '#0A0E1A',
+                  border: '1px solid rgba(0, 194, 255, 0.2)',
+                  borderRadius: '8px',
+                  color: 'white',
+                  fontSize: '16px',
+                  outline: 'none',
+                  boxSizing: 'border-box'
+                }}
+              />
+            </div>
+
+            {/* Buttons */}
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button
+                onClick={() => setShowBudgetModal(false)}
+                style={{
+                  flex: 1,
+                  padding: '14px',
+                  backgroundColor: 'transparent',
+                  color: '#8892A4',
+                  border: '1px solid rgba(139, 148, 158, 0.3)',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  cursor: 'pointer'
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleBudgetSubmit}
+                style={{
+                  flex: 1,
+                  padding: '14px',
+                  backgroundColor: '#00C2FF',
+                  color: '#0A0E1A',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  fontWeight: '700',
+                  cursor: 'pointer'
+                }}
+              >
+                Set Budget
               </button>
             </div>
           </div>
